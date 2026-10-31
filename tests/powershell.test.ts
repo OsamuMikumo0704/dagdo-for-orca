@@ -1,10 +1,10 @@
 import { expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
 it.skipIf(process.platform !== "win32" || !process.env.DAGDO_TEST_PWSH)("PowerShell launchers preserve native arguments, Unicode paths, environment isolation and exit codes", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "dagdo shell \u65e5\u672c\u8a9e "));
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "dagdo shell \u65e5\u672c\u8a9e ")));
   const app = resolve(import.meta.dir, "..");
   const probe = join(directory, "argument probe.ts"), result = join(directory, "result.json");
   const fixture = join(directory, "fixture.ps1");

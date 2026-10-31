@@ -40,6 +40,16 @@ local/
 .claude/
 .codex/
 .orca/
+.ssh/
+.aws/
+.azure/
+.kube/
+data.json
+.server.json
+.data.lock*/
+*.bundle
+id_rsa*
+id_ed25519*
 *.pem
 *.key
 *.p12

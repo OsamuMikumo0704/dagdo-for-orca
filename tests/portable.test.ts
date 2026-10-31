@@ -1,12 +1,12 @@
 import { expect, it } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { createServer } from "net";
 import { resolveEnvironment } from "../src/environment";
 
 it("source archives work without Git, back up, refuse unsafe restores and shut down portably", async () => {
-  const root = mkdtempSync(join(tmpdir(), "dagdo portable \u65e5\u672c\u8a9e "));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "dagdo portable \u65e5\u672c\u8a9e ")));
   const source = resolve(import.meta.dir, "..");
   const app = join(root, "app");
   mkdirSync(app);

@@ -1,11 +1,12 @@
 import { expect, it } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, openSync, closeSync } from "fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, openSync, closeSync, realpathSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import { resolveEnvironment } from "../src/environment";
 
 it("linked worktrees isolate direct CLI data, seed once, and honor explicit overrides", async () => {
-  const root = mkdtempSync(join(tmpdir(), "dagdo worktrees \u65e5\u672c\u8a9e "));
+  // macOS /var aliases and Windows short home names resolve to the same store.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "dagdo worktrees \u65e5\u672c\u8a9e ")));
   const main = join(root, "app"); mkdirSync(main);
   const source = resolve(import.meta.dir, "..");
   for (const name of ["src", "scripts", "package.json"]) cpSync(join(source, name), join(main, name), { recursive: true });
