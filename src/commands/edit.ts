@@ -1,77 +1,69 @@
 import { parseArgs } from "util";
-import { loadGraph, saveGraph } from "../storage";
+import { loadGraph, saveGraph, withGraphLock } from "../storage";
 import { resolveId } from "../ids";
 import { formatId } from "../format";
-import { NOTES_MAX_CHARS } from "../graph/mutations";
-import type { Priority } from "../types";
+import { CliError } from "../cli-error";
+import { updateTask, type TaskPatch } from "../graph/mutations";
+import { describeTask, isProgress } from "../task-state";
+import { printJson, readNote, updateError } from "./shared";
 
 export async function editCommand(args: string[]): Promise<void> {
+  return withGraphLock(() => run(args));
+}
+
+async function run(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
     options: {
       title: { type: "string" },
-      priority: { type: "string", short: "p" },
-      tag: { type: "string", short: "t", multiple: true, default: [] },
-      untag: { type: "string", multiple: true, default: [] },
+      progress: { type: "string" },
+      "clear-dependencies": { type: "boolean", default: false },
       note: { type: "string" },
+      "note-file": { type: "string" },
       "clear-note": { type: "boolean", default: false },
+      json: { type: "boolean", default: false },
     },
   });
 
   const prefix = positionals[0];
-  if (!prefix) {
-    console.error(
-      "Usage: dagdo edit <id> [--title <new>] [--priority low|med|high] [--tag <add>] [--untag <remove>] [--note <text>] [--clear-note]",
-    );
-    process.exit(1);
+  if (prefix === undefined) {
+    throw new CliError("invalid_input", "Usage: dagdo edit <id> [--title <new>] [--progress backlog|ready|in_progress] [--note <text> | --note-file <path>] [--clear-note] [--json]");
   }
 
-  // `--note` and `--clear-note` are contradictory — reject up front rather
+  const patch: TaskPatch = {};
+  if (values.title !== undefined) {
+    patch.title = values.title.trim();
+    if (!patch.title) throw new CliError("invalid_title", "Title cannot be empty.");
+  }
+  if (values.progress !== undefined) {
+    if (!isProgress(values.progress)) {
+      throw new CliError("invalid_progress", `Invalid progress: "${values.progress}". Use: backlog, ready, in_progress`);
+    }
+    patch.progress = values.progress;
+  }
+  if (values["clear-dependencies"]) patch.clearDependencies = true;
+  const note = readNote(values);
+  // A note and `--clear-note` are contradictory — reject up front rather
   // than picking an arbitrary winner.
-  if (values.note !== undefined && values["clear-note"]) {
-    console.error("--note and --clear-note are mutually exclusive.");
-    process.exit(1);
+  if (note !== undefined && values["clear-note"]) {
+    throw new CliError("invalid_input", "--note and --clear-note are mutually exclusive.");
+  }
+  if (note !== undefined) patch.notes = note;
+  if (values["clear-note"]) patch.notes = null;
+  if (Object.keys(patch).length === 0) {
+    throw new CliError("empty_patch", "Nothing to change. Pass --title, --progress, --note, --note-file or --clear-note.");
   }
 
   const data = await loadGraph();
-  const allIds = data.tasks.map((t) => t.id);
-  const id = resolveId(prefix, allIds);
-  if (!id) process.exit(1);
+  const id = resolveId(prefix, data.tasks.map((t) => t.id));
+  const result = updateTask(data, id, patch);
+  if (!result.ok) throw updateError(result);
 
-  const task = data.tasks.find((t) => t.id === id)!;
-
-  if (values.title) {
-    task.title = values.title as string;
+  await saveGraph(result.data, `edit: ${result.task.title}`);
+  if (values.json) {
+    printJson({ task: describeTask(result.task, result.data.tasks, result.data.edges) });
+    return;
   }
-  if (values.priority) {
-    if (!["low", "med", "high"].includes(values.priority as string)) {
-      console.error(`Invalid priority: "${values.priority}". Use: high, med, low`);
-      process.exit(1);
-    }
-    task.priority = values.priority as Priority;
-  }
-  for (const t of (values.tag as string[]) ?? []) {
-    if (!task.tags.includes(t)) task.tags.push(t);
-  }
-  for (const t of (values.untag as string[]) ?? []) {
-    task.tags = task.tags.filter((tag) => tag !== t);
-  }
-  if (values.note !== undefined) {
-    const note = values.note as string;
-    if (note.length > NOTES_MAX_CHARS) {
-      console.error(`Note too long: ${note.length} chars (limit ${NOTES_MAX_CHARS}).`);
-      process.exit(1);
-    }
-    // Empty string clears too — `--note ""` is a reasonable synonym for
-    // `--clear-note`. Drop the field entirely so data.json stays tidy.
-    if (note.length === 0) delete task.notes;
-    else task.notes = note;
-  }
-  if (values["clear-note"]) {
-    delete task.notes;
-  }
-
-  await saveGraph(data, `edit: ${task.title}`);
-  console.log(`Updated ${formatId(id)}  ${task.title}`);
+  console.log(`Updated ${formatId(id)}  ${result.task.title}`);
 }

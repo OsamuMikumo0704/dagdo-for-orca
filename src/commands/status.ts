@@ -1,8 +1,7 @@
 import { parseArgs } from "util";
 import pc from "picocolors";
 import { loadGraph } from "../storage";
-import { buildActiveGraph } from "../graph/dag";
-import { getReadyTasks } from "../graph/topo";
+import { computeTaskStates } from "../task-state";
 
 export async function statusCommand(args: string[]): Promise<void> {
   const { values } = parseArgs({
@@ -13,17 +12,19 @@ export async function statusCommand(args: string[]): Promise<void> {
   });
 
   const data = await loadGraph();
-  const graph = buildActiveGraph(data);
-  const ready = getReadyTasks(graph);
+  const states = [...computeTaskStates(data.tasks, data.edges).values()];
+  const count = (state: string) => states.filter(s => s === state).length;
 
   const total = data.tasks.length;
   const done = data.tasks.filter((t) => t.doneAt != null).length;
   const active = total - done;
-  const readyCount = ready.length;
-  const blocked = active - readyCount;
+  const readyCount = count("ready");
+  const inProgress = count("in_progress");
+  const blocked = count("blocked");
+  const backlog = count("backlog");
 
   if (values.json) {
-    console.log(JSON.stringify({ total, done, active, ready: readyCount, blocked }));
+    console.log(JSON.stringify({ total, done, active, ready: readyCount, inProgress, blocked, backlog }));
     return;
   }
 
@@ -35,7 +36,9 @@ export async function statusCommand(args: string[]): Promise<void> {
   console.log(`  Total:    ${total}`);
   console.log(`  Done:     ${pc.green(String(done))}`);
   console.log(`  Active:   ${active}`);
+  console.log(`    Backlog: ${backlog}`);
   console.log(`    Ready:  ${pc.cyan(String(readyCount))}`);
+  console.log(`    In Progress: ${inProgress}`);
   console.log(`    Blocked:${pc.yellow(` ${blocked}`)}`);
   console.log(`\n  ${bar}  ${total > 0 ? Math.round((done / total) * 100) : 0}%`);
 }

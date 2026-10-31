@@ -2,6 +2,8 @@ import { parseArgs } from "util";
 import pc from "picocolors";
 import { startServer } from "../server";
 import { openExternal } from "../open";
+import { environment } from "../environment";
+import { globalDataDir } from "../storage";
 
 const DEFAULT_PORT = 3737;
 
@@ -14,11 +16,12 @@ export async function uiCommand(args: string[]): Promise<void> {
     },
   });
 
-  const preferredPort = values.port ? parsePort(values.port as string) : DEFAULT_PORT;
+  const preferredPort = values.port ? parsePort(values.port as string) : environment().development ? 3738 : DEFAULT_PORT;
 
   const server = await startServer({ preferredPort });
 
   console.log(pc.green(`dagdo ui running at ${server.url}`));
+  console.log(`  ${environment().development ? "Development" : "Local"} data: ${globalDataDir()}`);
   if (server.port !== preferredPort) {
     console.log(pc.dim(`  (port ${preferredPort} was in use)`));
   }
@@ -28,7 +31,7 @@ export async function uiCommand(args: string[]): Promise<void> {
     openExternal(server.url);
   }
 
-  await waitForShutdown(server.stop);
+  await waitForShutdown(server.stop, server.closed);
 }
 
 function parsePort(raw: string): number {
@@ -40,7 +43,7 @@ function parsePort(raw: string): number {
   return n;
 }
 
-function waitForShutdown(stop: () => Promise<void>): Promise<void> {
+function waitForShutdown(stop: () => Promise<void>, closed: Promise<void>): Promise<void> {
   return new Promise<void>((resolve) => {
     const shutdown = async () => {
       try {
@@ -51,5 +54,10 @@ function waitForShutdown(stop: () => Promise<void>): Promise<void> {
     };
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
+    void closed.then(() => {
+      process.off("SIGINT", shutdown);
+      process.off("SIGTERM", shutdown);
+      resolve();
+    });
   });
 }

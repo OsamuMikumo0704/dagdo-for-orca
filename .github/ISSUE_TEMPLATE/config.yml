@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/OsamuMikumo0704/dagdo-for-orca/security/advisories/new
+    about: Do not post credentials or vulnerabilities in a public issue.

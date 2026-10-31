@@ -1,5 +1,6 @@
 import pc from "picocolors";
-import type { AdjacencyGraph, GraphLayout, LayoutNode, LayoutEdge, TaskId, Priority } from "../types";
+import type { AdjacencyGraph, GraphLayout, LayoutNode, LayoutEdge, TaskId } from "../types";
+import { computeTaskStates, STATE_LABELS } from "../task-state";
 import { topologicalSort } from "./topo";
 import { effectiveInDegree } from "./dag";
 
@@ -47,9 +48,10 @@ export function renderAscii(graph: AdjacencyGraph): string {
   const roots = layout.nodes
     .filter((n) => n.blocked === 0)
     .sort((a, b) => {
-      const priOrder: Record<Priority, number> = { high: 0, med: 1, low: 2 };
-      return priOrder[a.task.priority] - priOrder[b.task.priority] || a.task.createdAt.localeCompare(b.task.createdAt);
+      return a.task.createdAt.localeCompare(b.task.createdAt);
     });
+
+  const states = computeTaskStates([...graph.tasks.values()], [...graph.outEdges].flatMap(([from, tos]) => [...tos].map(to => ({ from, to }))));
 
   function formatNode(id: TaskId): string {
     const task = graph.tasks.get(id)!;
@@ -57,14 +59,8 @@ export function renderAscii(graph: AdjacencyGraph): string {
     if (done) {
       return pc.dim(`${id} ${pc.strikethrough(task.title)} done`);
     }
-    const priColor: Record<Priority, (s: string) => string> = {
-      high: pc.red,
-      med: pc.yellow,
-      low: pc.dim,
-    };
-    const pri = priColor[task.priority](`${task.priority}`);
-    const tags = task.tags.length > 0 ? pc.dim(` [${task.tags.join(", ")}]`) : "";
-    return `${pc.cyan(id)} ${task.title} ${pri}${tags}`;
+    const state = STATE_LABELS[states.get(id)!];
+    return `${pc.cyan(id)} ${task.title} ${state}`;
   }
 
   function renderTree(id: TaskId, prefix: string, isLast: boolean, isRoot: boolean): void {
@@ -109,7 +105,7 @@ export function renderAscii(graph: AdjacencyGraph): string {
 export function renderMermaid(graph: AdjacencyGraph): string {
   if (graph.tasks.size === 0) return "graph TD\n    empty[No tasks]";
 
-  // Linear-inspired light palette (mirrors web/src/styles.css and docs/hero.svg).
+  // Light palette for exported diagrams.
   const theme = `%%{init: {'theme': 'base', 'themeVariables': {
     'primaryColor': '#ffffff',
     'primaryTextColor': '#1a1a1e',
@@ -140,8 +136,7 @@ export function renderMermaid(graph: AdjacencyGraph): string {
       doneIds.push(id);
       lines.push(`    ${id}("${task.title} ✓")`);
     } else {
-      const tags = task.tags.length > 0 ? ` [${task.tags.join(", ")}]` : "";
-      lines.push(`    ${id}("${task.title}${tags}")`);
+      lines.push(`    ${id}("${task.title}")`);
       // "Ready" means no unfinished predecessors — done blockers don't count.
       const isReady = effectiveInDegree(graph, id) === 0;
       if (isReady) {
@@ -167,9 +162,9 @@ export function renderMermaid(graph: AdjacencyGraph): string {
   for (const id of doneIds) {
     lines.push(`    style ${id} fill:#f3f4f5,color:#8a8f98,stroke:#d0d6e0`);
   }
-  // Ready (in-degree 0): Linear indigo CTA
+  // Actionable tasks use their progress color.
   for (const id of readyIds) {
-    lines.push(`    style ${id} fill:#5e6ad2,color:#ffffff,stroke:#5e6ad2`);
+    lines.push(`    style ${id} fill:${{ backlog: "#a1a1aa", ready: "#fbbf24", in_progress: "#22c55e" }[graph.tasks.get(id)!.progress]},color:#ffffff,stroke:#666666`);
   }
   // Blocked: white card with subtle border
   for (const id of activeIds) {
@@ -194,17 +189,14 @@ export function renderDot(graph: AdjacencyGraph): string {
 
   for (const [id, task] of graph.tasks) {
     const done = task.doneAt != null;
-    const tags = task.tags.length > 0 ? `\\n[${task.tags.join(", ")}]` : "";
     if (done) {
       const label = `${task.title}\\n(done)`;
       lines.push(`  "${id}" [label="${label}", fillcolor="#dddddd", fontcolor="#999999", style="rounded,filled,dashed"]`);
     } else {
-      const label = `${task.title}${tags}`;
-      const color =
-        task.priority === "high" ? '#ff6666", fontcolor="#ffffff'
-        : task.priority === "low" ? '#cccccc", fontcolor="#333333'
-        : '#88bbff", fontcolor="#000000';
-      lines.push(`  "${id}" [label="${label}", fillcolor="${color}"]`);
+      const label = `${task.title}`;
+      const state = effectiveInDegree(graph, id) > 0 ? "blocked" : task.progress;
+      const color = { blocked: "#f3f4f5", backlog: "#a1a1aa", ready: "#fbbf24", in_progress: "#22c55e" }[state];
+      lines.push(`  "${id}" [label="${label}\\n${STATE_LABELS[state]}", fillcolor="${color}"]`);
     }
   }
 

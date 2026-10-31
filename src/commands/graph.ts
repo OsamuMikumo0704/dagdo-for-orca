@@ -3,6 +3,8 @@ import { writeFileSync } from "fs";
 import { loadGraph } from "../storage";
 import { buildActiveGraph, buildFullGraph } from "../graph/dag";
 import { renderAscii, renderMermaid, renderDot } from "../graph/render";
+import { describeTask } from "../task-state";
+import { printJson } from "./shared";
 
 export async function graphCommand(args: string[]): Promise<void> {
   const { values } = parseArgs({
@@ -12,11 +14,21 @@ export async function graphCommand(args: string[]): Promise<void> {
       png: { type: "string" },
       dot: { type: "boolean", default: false },
       all: { type: "boolean", default: false },
+      json: { type: "boolean", default: false },
     },
   });
 
   const data = await loadGraph();
-  const graph = values.all ? buildFullGraph(data) : buildActiveGraph(data);
+  const mapData = { ...data, tasks: data.tasks.filter(t => t.progress !== "backlog") };
+  const graph = values.all ? buildFullGraph(mapData) : buildActiveGraph(mapData);
+
+  if (values.json) {
+    printJson({
+      tasks: [...graph.tasks.values()].map((t) => describeTask(t, data.tasks, data.edges)),
+      edges: data.edges.filter((e) => graph.tasks.has(e.from) && graph.tasks.has(e.to)),
+    });
+    return;
+  }
 
   if (values.mermaid) {
     console.log(renderMermaid(graph));

@@ -1,22 +1,18 @@
-import type { AdjacencyGraph, Task, TaskId, Priority } from "../types";
-
-const PRIORITY_ORDER: Record<Priority, number> = { high: 0, med: 1, low: 2 };
+import type { AdjacencyGraph, Task, TaskId } from "../types";
 
 /**
  * Get tasks with zero in-degree (no unfinished blockers).
- * Sorted by priority (high first), then creation date (oldest first).
+ * Sorted by creation date (oldest first).
  */
 export function getReadyTasks(graph: AdjacencyGraph): Task[] {
   const ready: Task[] = [];
   for (const [id, deps] of graph.inEdges) {
     if (deps.size === 0) {
       const task = graph.tasks.get(id);
-      if (task) ready.push(task);
+      if (task && task.progress !== "backlog") ready.push(task);
     }
   }
   ready.sort((a, b) => {
-    const priDiff = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-    if (priDiff !== 0) return priDiff;
     return a.createdAt.localeCompare(b.createdAt);
   });
   return ready;

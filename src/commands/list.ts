@@ -1,6 +1,7 @@
 import { parseArgs } from "util";
 import { loadGraph } from "../storage";
 import { formatTaskTable } from "../format";
+import { describeTask } from "../task-state";
 import type { Task } from "../types";
 
 export async function listCommand(args: string[]): Promise<void> {
@@ -9,8 +10,6 @@ export async function listCommand(args: string[]): Promise<void> {
     options: {
       all: { type: "boolean", default: false },
       done: { type: "boolean", default: false },
-      tag: { type: "string", short: "t" },
-      priority: { type: "string", short: "p" },
       json: { type: "boolean", default: false },
     },
   });
@@ -25,14 +24,6 @@ export async function listCommand(args: string[]): Promise<void> {
   } else {
     tasks = data.tasks.filter((t) => t.doneAt == null);
   }
-
-  if (values.tag) {
-    tasks = tasks.filter((t) => t.tags.includes(values.tag as string));
-  }
-  if (values.priority) {
-    tasks = tasks.filter((t) => t.priority === values.priority);
-  }
-
   // Compute blocker IDs for active tasks (only active blockers)
   const activeDone = new Set(data.tasks.filter((t) => t.doneAt != null).map((t) => t.id));
   const blockerIds = new Map<string, string[]>();
@@ -73,7 +64,7 @@ export async function listCommand(args: string[]): Promise<void> {
   }
 
   if (values.json) {
-    const result = sorted.map((t) => ({ ...t, blockedBy: blockerIds.get(t.id) ?? [] }));
+    const result = sorted.map((t) => describeTask(t, data.tasks, data.edges));
     console.log(JSON.stringify(result, null, 2));
     return;
   }

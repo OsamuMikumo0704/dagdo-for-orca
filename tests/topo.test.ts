@@ -3,14 +3,13 @@ import { buildActiveGraph } from "../src/graph/dag";
 import { getReadyTasks, topologicalSort } from "../src/graph/topo";
 import type { GraphData } from "../src/types";
 
-function makeData(taskIds: string[], edges: [string, string][], priorities?: Record<string, "low" | "med" | "high">): GraphData {
+function makeData(taskIds: string[], edges: [string, string][]): GraphData {
   return {
     version: 1,
     tasks: taskIds.map((id) => ({
       id,
       title: `Task ${id}`,
-      priority: priorities?.[id] ?? ("med" as const),
-      tags: [],
+      progress: "ready" as const,
       createdAt: "2026-01-01T00:00:00Z",
       doneAt: null,
     })),
@@ -29,9 +28,9 @@ describe("getReadyTasks", () => {
     expect(getReadyTasks(graph).map((t) => t.id)).toEqual(["a"]);
   });
 
-  it("sorts by priority then creation date", () => {
+  it("sorts by creation date regardless of progress", () => {
     const graph = buildActiveGraph(
-      makeData(["a", "b", "c"], [], { a: "low", b: "high", c: "med" })
+      { ...makeData(["a", "b", "c"], []), tasks: makeData(["a", "b", "c"], []).tasks.map((t, i) => ({ ...t, createdAt: ["2026-01-03", "2026-01-01", "2026-01-02"][i]!, progress: i === 0 ? "in_progress" as const : "ready" as const })) }
     );
     expect(getReadyTasks(graph).map((t) => t.id)).toEqual(["b", "c", "a"]);
   });

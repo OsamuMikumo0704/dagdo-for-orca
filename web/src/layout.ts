@@ -1,8 +1,9 @@
+import { computeTaskStates } from "../../src/task-state";
 import dagre from "dagre";
 import type { Edge, NodeState, Task } from "./types";
 
 const NODE_WIDTH = 280;
-const NODE_HEIGHT = 64;
+const NODE_HEIGHT = 100;
 
 // Gap between connected components when packed side-by-side. 120px is ~3x the
 // intra-component nodesep (40px) so the break clearly reads as "separate
@@ -45,7 +46,7 @@ export function layoutGraph(
 ): LaidOutNode[] {
   if (tasks.length === 0) return [];
 
-  const states = computeNodeStates(tasks, edges);
+  const states = computeTaskStates(tasks, edges);
   const components = findComponents(tasks, edges);
 
   const laidOut: ComponentLayout[] = components.map((componentTasks) =>
@@ -185,27 +186,4 @@ function layoutComponent(
   if (sortKey === null) throw new Error("layoutComponent: empty component");
 
   return { nodes, minX, maxX, minY, maxY, sortKey };
-}
-
-/**
- * Mirror of effectiveInDegree in src/graph/dag.ts — a done predecessor no
- * longer blocks its successor.
- */
-function computeNodeStates(tasks: Task[], edges: Edge[]): Map<string, NodeState> {
-  const taskById = new Map(tasks.map((t) => [t.id, t]));
-  const blockerCount = new Map<string, number>();
-  for (const t of tasks) blockerCount.set(t.id, 0);
-  for (const e of edges) {
-    const from = taskById.get(e.from);
-    if (from && from.doneAt == null) {
-      blockerCount.set(e.to, (blockerCount.get(e.to) ?? 0) + 1);
-    }
-  }
-  const states = new Map<string, NodeState>();
-  for (const t of tasks) {
-    if (t.doneAt != null) states.set(t.id, "done");
-    else if ((blockerCount.get(t.id) ?? 0) === 0) states.set(t.id, "ready");
-    else states.set(t.id, "blocked");
-  }
-  return states;
 }

@@ -1,46 +1,14 @@
-# Project Rules
+# Local Windows workflow
 
-## CLI command changes
+- Cross-platform operations are documented in docs/operations.md. Bun-only start, backup, restore and check commands are available on every OS; use scripts/check.ps1 on Windows to include launcher tests.
 
-When adding, removing, or modifying any CLI command or flag, update **all** of the following in the same commit:
-
-- `src/commands/help.ts` — help text
-- `README.md` — Commands table and relevant usage examples
-- `skills/dagdo/SKILL.md` — skill command reference and examples
-
-Do not consider a CLI change complete until all three are in sync.
-
-## Branch strategy
-
-- **Never push directly to main.** All changes go through feature branches + MR.
-- Feature branches: `feat/xxx`, `fix/xxx`, etc. Push freely.
-- main branch is protected: requires PR, review, and passing CI.
-
-## Release workflow
-
-Releases are fully automated via MR labels. The process:
-
-1. Create a feature branch, make changes.
-2. Record changes under `## [Unreleased]` in CHANGELOG.md.
-3. Push the feature branch (triggers alpha package publish to npm).
-4. Open a MR to main. Add a version label: `patch`, `minor`, or `major`.
-5. CI runs tests + checks the label exists.
-6. After review + merge, Release CI automatically:
-   - Bumps package.json based on the label
-   - Updates CHANGELOG (moves Unreleased to versioned section)
-   - Commits, tags, builds binaries, publishes to npm + GitHub Releases
-
-Do NOT:
-- Push directly to main
-- Manually create version tags
-- Manually bump package.json version (CI handles it)
-
-## Post-merge CI verification
-
-After a MR is merged, check the release workflow status:
-
-```bash
-gh run list --repo Coiggahou2002/dagdo --workflow release.yml --limit 1
-```
-
-If the run failed, investigate immediately.
+- Humans use the browser; agents use scripts/dagdo.ts through Bun, from any shell. From the repository root: bun run scripts/dagdo.ts next. All scripts/*.ps1 support Windows PowerShell 5.1 and PowerShell 7.
+- Never directly edit the real data/data.json. All writers must use withGraphLock before loading, modifying and saving.
+- Stop the UI and agent writes, then run scripts/backup.ps1 before changing the source.
+- Tests and manual checks must use temporary DAGDO_DATA_DIR paths, never real task data. Do not set DAGDO_DATA_DIR globally.
+- Additional Git worktrees automatically use isolated sample data in .dagdo-dev/; start/stop and backups are worktree-local. Main worktree defaults remain production.
+- Use scripts/check.ps1 for tests, types and UI build. Restart after a successful build.
+- Keep help, README and skills/dagdo/SKILL.md in sync when changing CLI behavior. A new browser action needs a matching CLI command so agents keep parity.
+- No npm publication or cloud task sync in this setup.
+- Read docs/windows-local.md for operations and docs/architecture.md for the repository map and change guide.
+- All application-generated text must be in English, including UI labels, statuses, dialogs, messages, dates, sample content, and CLI output. Preserve user-entered content in its original language.

@@ -1,57 +1,49 @@
 {
-  "name": "@coiggahou2002/dagdo",
-  "version": "0.18.1",
+  "name": "dagdo-local",
+  "private": true,
+  "version": "0.19.0",
   "description": "Dependency-aware todo manager — tasks as a DAG, topological sort tells you what to do next",
   "module": "src/cli.ts",
   "type": "module",
-  "files": [
-    "bin",
-    "dist",
-    "skills"
-  ],
-  "bin": {
-    "dagdo": "bin/dagdo"
-  },
-  "engines": {
-    "node": ">=18"
-  },
   "scripts": {
-    "dev": "bun run src/cli.ts",
-    "build:web": "cd web && bun install --frozen-lockfile && bun run build",
-    "build:node": "bun build src/cli.ts --target=node --outfile dist/cli.js --external mermaid-isomorphic --external playwright --external @hpcc-js/wasm-graphviz --external @resvg/resvg-js",
-    "build": "bash scripts/build.sh",
+    "dev": "bun run scripts/dagdo.ts",
+    "start": "bun run scripts/manage.ts start",
+    "backup": "bun run scripts/manage.ts backup",
+    "restore": "bun run scripts/manage.ts restore",
+    "check": "bun run scripts/check.ts",
+    "build:web": "cd web && bun install --frozen-lockfile && bun --bun run build",
+    "build": "bun run build:web",
     "test": "bun test",
-    "typecheck": "tsc --noEmit && cd web && bun install --frozen-lockfile && bun run typecheck"
+    "typecheck": "bun --bun x --no-install tsc --noEmit && cd web && bun install --frozen-lockfile && bun --bun run typecheck"
   },
-  "keywords": [
-    "todo",
-    "task",
-    "dag",
-    "dependency",
-    "graph",
-    "cli",
-    "topological-sort"
-  ],
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Coiggahou2002/dagdo.git"
+    "url": "https://github.com/OsamuMikumo0704/dagdo-for-orca.git"
   },
-  "homepage": "https://github.com/Coiggahou2002/dagdo",
-  "bugs": "https://github.com/Coiggahou2002/dagdo/issues",
-  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/OsamuMikumo0704/dagdo-for-orca/issues"
+  },
+  "homepage": "https://github.com/OsamuMikumo0704/dagdo-for-orca#readme",
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "picocolors": "^1.1.1"
   },
   "optionalDependencies": {
-    "@hpcc-js/wasm-graphviz": "^1.21.2",
+    "@hpcc-js/wasm-graphviz": "^1.30.0",
     "@resvg/resvg-js": "^2.6.2",
     "mermaid-isomorphic": "^3.1.0",
-    "playwright": "^1.59.1"
+    "playwright": "^1.64.1"
+  },
+  "overrides": {
+    "katex": "^0.18.2"
   }
 }

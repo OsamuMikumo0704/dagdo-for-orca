@@ -1,45 +1,34 @@
 import pc from "picocolors";
-import type { Task, Priority } from "./types";
-
-const PRIORITY_LABEL: Record<Priority, string> = {
-  high: pc.red(pc.bold("HIGH")),
-  med: pc.yellow("MED "),
-  low: pc.dim("LOW "),
-};
+import { STATE_LABELS } from "./task-state";
+import type { Task } from "./types";
 
 export function formatId(id: string): string {
   return pc.cyan(id);
 }
 
-export function formatPriority(p: Priority): string {
-  return PRIORITY_LABEL[p];
-}
-
 export function formatTask(task: Task, extra?: string): string {
   const done = task.doneAt != null;
   const id = formatId(task.id);
-  const pri = formatPriority(task.priority);
-  const tags = task.tags.length > 0 ? pc.dim(` [${task.tags.join(", ")}]`) : "";
+  const state = STATE_LABELS[done ? "done" : task.progress];
   const title = done ? pc.strikethrough(pc.dim(task.title)) : task.title;
   const suffix = extra ? ` ${extra}` : "";
-  return `${id}  ${pri}  ${title}${tags}${suffix}`;
+  return `${id}  ${state.padEnd(12)}  ${title}${suffix}`;
 }
 
 export function formatTaskTable(tasks: Task[], blockerIds?: Map<string, string[]>): string {
   if (tasks.length === 0) return pc.dim("No tasks.");
 
-  // Compute the display width of each task's title+tags (visible characters only)
+  // Compute the display width of each task's title (visible characters only)
   const titleWidths: number[] = [];
   const titles: string[] = [];
   for (const t of tasks) {
-    const tags = t.tags.length > 0 ? ` [${t.tags.join(", ")}]` : "";
-    const title = t.doneAt != null ? t.title + " ✓" : t.title + tags;
+    const title = t.doneAt != null ? t.title + " ✓" : t.title;
     titles.push(title);
     titleWidths.push(visualWidth(title));
   }
   const maxTitleWidth = Math.max(...titleWidths);
 
-  // ID(6) + 2 spaces + PRI(4) + 2 spaces = fixed prefix, then title column + blocked column
+  // State, title, and unfinished dependency count.
   return tasks
     .map((t, i) => {
       const blockers = blockerIds?.get(t.id);
@@ -48,11 +37,11 @@ export function formatTaskTable(tasks: Task[], blockerIds?: Map<string, string[]
       const blockedCol = blockedCount > 0 ? `  ${pc.red(`⏳ ${blockedCount}`)}` : "";
 
       const id = formatId(t.id);
-      const pri = formatPriority(t.priority);
+      const state = STATE_LABELS[t.doneAt != null ? "done" : blockedCount > 0 ? "blocked" : t.progress];
       const done = t.doneAt != null;
       const title = done ? pc.strikethrough(pc.dim(titles[i]!)) : titles[i]!;
 
-      return `${id}  ${pri}  ${title}${padding}${blockedCol}`;
+      return `${id}  ${state.padEnd(12)}  ${title}${padding}${blockedCol}`;
     })
     .join("\n");
 }

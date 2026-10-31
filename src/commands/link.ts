@@ -1,65 +1,53 @@
 import { parseArgs } from "util";
-import { loadGraph, saveGraph } from "../storage";
+import { loadGraph, saveGraph, withGraphLock } from "../storage";
 import { resolveId } from "../ids";
 import { formatId } from "../format";
-import { buildActiveGraph, wouldCreateCycle } from "../graph/dag";
+import { CliError } from "../cli-error";
+import { addEdge } from "../graph/mutations";
+import { edgeError, printJson } from "./shared";
 
 export async function linkCommand(args: string[]): Promise<void> {
+  return withGraphLock(() => run(args));
+}
+
+async function run(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
     options: {
       before: { type: "string" },
       after: { type: "string" },
+      json: { type: "boolean", default: false },
     },
   });
 
   const id = positionals[0];
-  if (!id || (!values.before && !values.after)) {
-    console.error("Usage: dagdo link <id> --before <other>");
-    console.error("       dagdo link <id> --after <other>");
-    console.error("  --before: <id> must be done before <other>");
-    console.error("  --after:  <id> must be done after <other>");
-    process.exit(1);
+  const other = values.before ?? values.after;
+  if (id === undefined || other === undefined || (values.before !== undefined && values.after !== undefined)) {
+    throw new CliError("invalid_input", [
+      "Usage: dagdo link <id> --before <other> [--json]",
+      "       dagdo link <id> --after <other> [--json]",
+      "  --before: <id> must be done before <other>",
+      "  --after:  <id> must be done after <other>",
+    ].join("\n"));
   }
 
   const data = await loadGraph();
-  const activeIds = data.tasks.filter((t) => t.doneAt == null).map((t) => t.id);
-
-  const taskId = resolveId(id, activeIds);
-  if (!taskId) process.exit(1);
+  const allIds = data.tasks.map((t) => t.id);
+  const taskId = resolveId(id, allIds);
+  const otherId = resolveId(other, allIds);
 
   // Resolve from/to based on --before or --after
-  let fromId: string;
-  let toId: string;
+  const edge = values.before !== undefined ? { from: taskId, to: otherId } : { from: otherId, to: taskId };
+  const result = addEdge(data, edge);
+  if (!result.ok) throw edgeError(result);
 
-  if (values.before) {
-    const otherId = resolveId(values.before as string, activeIds);
-    if (!otherId) process.exit(1);
-    fromId = taskId;
-    toId = otherId;
-  } else {
-    const otherId = resolveId(values.after as string, activeIds);
-    if (!otherId) process.exit(1);
-    fromId = otherId;
-    toId = taskId;
+  const fromTask = data.tasks.find((t) => t.id === edge.from)!;
+  const toTask = data.tasks.find((t) => t.id === edge.to)!;
+  await saveGraph(result.data, `link: ${fromTask.title} -> ${toTask.title}`);
+  if (values.json) {
+    printJson({ edge });
+    return;
   }
-
-  if (data.edges.some((e) => e.from === fromId && e.to === toId)) {
-    console.error("This dependency already exists.");
-    process.exit(1);
-  }
-
-  const graph = buildActiveGraph(data);
-  const cycle = wouldCreateCycle(graph, fromId, toId);
-  if (cycle) {
-    console.error(`Cannot add: would create a cycle: ${cycle.map(formatId).join(" -> ")}`);
-    process.exit(1);
-  }
-
-  data.edges.push({ from: fromId, to: toId });
-  const fromTask = data.tasks.find((t) => t.id === fromId)!;
-  const toTask = data.tasks.find((t) => t.id === toId)!;
-  await saveGraph(data, `link: ${fromTask.title} -> ${toTask.title}`);
-  console.log(`Linked: ${formatId(fromId)} ${fromTask.title}  →  ${formatId(toId)} ${toTask.title}`);
+  console.log(`Linked: ${formatId(edge.from)} ${fromTask.title}  →  ${formatId(edge.to)} ${toTask.title}`);
 }

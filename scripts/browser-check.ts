@@ -1,0 +1,70 @@
+﻿import { chromium } from "playwright";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { strict as assert } from "assert";
+import { startServer } from "../src/server/server";
+const dir=mkdtempSync(join(tmpdir(),"dagdo-browser-"));
+const previous=process.env.DAGDO_DATA_DIR;process.env.DAGDO_DATA_DIR=dir;
+const server=await startServer({preferredPort:0});
+const browser=await chromium.launch({headless:true, executablePath:process.env.DAGDO_BROWSER_EXECUTABLE});
+try {
+ for(const scheme of ["light","dark"] as const) {
+  const context=await browser.newContext({colorScheme:scheme});const page=await context.newPage();
+  await page.goto(server.url);await page.getByRole("button",{name:"Toggle theme"}).waitFor();
+  const before=await page.locator("html").evaluate(e=>e.classList.contains("dark"));
+  assert.equal(before,scheme==="dark");
+  await page.getByRole("button",{name:"Toggle theme"}).click();
+  assert.equal(await page.locator("html").evaluate(e=>e.classList.contains("dark")),!before);
+  await page.reload();await page.getByRole("button",{name:"Toggle theme"}).waitFor();
+  assert.equal(await page.locator("html").evaluate(e=>e.classList.contains("dark")),!before);
+  await context.close();
+ }
+ const page=await browser.newPage();await page.goto(server.url);
+ await page.getByRole("button",{name:"Default"}).click();
+ page.once("dialog",d=>d.accept("Browser project"));
+ await page.getByRole("menuitem",{name:"New project",exact:true}).click();
+ await page.getByRole("button",{name:"Project: Browser project",exact:true}).waitFor();
+ page.once("dialog",d=>d.accept("Isolated browser task"));
+ await page.getByRole("button",{name:"New task",exact:true}).click();
+ await page.getByRole("button",{name:"Isolated browser task",exact:true}).waitFor();
+ assert.equal(await page.locator("select option[value=review]").count(),0);
+ await page.getByRole("button",{name:"Isolated browser task",exact:true}).dblclick();
+ await page.getByRole("dialog").getByRole("button",{name:"Done",exact:true}).click();
+ await page.getByRole("dialog").getByRole("button",{name:"Close",exact:true}).click();
+ const mapControls=page.getByRole("group",{name:"Map controls"});
+ assert.equal(await page.locator("header").getByRole("button",{name:"Undo",exact:true}).count(),0);
+ const hideCompleted=mapControls.getByRole("checkbox",{name:"Hide completed tasks"});
+ await hideCompleted.click();
+ await page.getByText("All completed tasks are hidden.",{exact:true}).waitFor();
+ await mapControls.getByRole("button",{name:"Undo",exact:true}).waitFor();
+ await hideCompleted.click();
+ await page.locator(".react-flow__node-task").waitFor();
+ await page.getByRole("button",{name:"Browser project"}).click();
+ await page.getByRole("menuitemradio",{name:"Browser project, 1 task",exact:true}).waitFor();
+ await page.getByRole("menuitemradio",{name:"Default"}).click();
+ await page.getByText("No tasks in this project.",{exact:true}).waitFor();
+ assert.equal(await page.getByRole("button",{name:"Isolated browser task",exact:true}).count(),0);
+ await page.getByRole("button",{name:"Project: Default"}).click();
+ await page.getByRole("menuitem",{name:"Delete current project"}).waitFor();
+ await page.waitForTimeout(100);
+ await page.keyboard.press("Escape");
+ await page.getByRole("menuitem",{name:"Delete current project"}).waitFor({state:"hidden"});
+ await page.reload();await page.getByRole("button",{name:"Default"}).waitFor();
+ await page.getByRole("button",{name:"Project: Default"}).click();
+ await page.getByRole("menuitemradio",{name:"Browser project"}).click();
+ await page.getByRole("button",{name:"Project: Browser project",exact:true}).click();
+ page.once("dialog",d=>d.accept("Renamed project"));
+ await page.getByRole("menuitem",{name:"Rename current project"}).click();
+ await page.getByRole("button",{name:"Project: Renamed project",exact:true}).click();
+ page.once("dialog",d=>d.accept());
+ await page.getByRole("menuitem",{name:"Delete current project"}).click();
+ await page.getByRole("button",{name:"Project: Default",exact:true}).click();
+ assert.equal(await page.getByRole("menuitem",{name:"Delete current project"}).getAttribute("aria-disabled"),"true");
+ console.log("Browser checks passed: single-click themes, persistence, map controls, project creation, isolation, rename and deletion.");
+} finally {
+ await browser.close();await server.stop();
+ if(previous===undefined)delete process.env.DAGDO_DATA_DIR;else process.env.DAGDO_DATA_DIR=previous;
+ rmSync(dir,{recursive:true,force:true});
+}
+

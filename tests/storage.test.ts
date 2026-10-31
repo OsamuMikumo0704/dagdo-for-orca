@@ -22,7 +22,7 @@ describe("storage format", () => {
     const data: GraphData = {
       version: 1,
       tasks: [
-        { id: "abc123", title: "Test task", priority: "high", tags: ["a"], createdAt: "2026-01-01T00:00:00Z", doneAt: null },
+        { id: "abc123", title: "Test task", progress: "in_progress", createdAt: "2026-01-01T00:00:00Z", doneAt: null },
       ],
       edges: [{ from: "abc123", to: "def456" }],
     };
@@ -40,7 +40,7 @@ describe("storage format", () => {
     const v1: GraphData = { version: 1, tasks: [], edges: [] };
     const v2: GraphData = {
       version: 1,
-      tasks: [{ id: "aaa111", title: "New", priority: "med", tags: [], createdAt: "2026-01-01T00:00:00Z", doneAt: null }],
+      tasks: [{ id: "aaa111", title: "New", progress: "ready", createdAt: "2026-01-01T00:00:00Z", doneAt: null }],
       edges: [],
     };
 
@@ -54,14 +54,13 @@ describe("storage format", () => {
   it("preserves unicode in task titles", () => {
     const data: GraphData = {
       version: 1,
-      tasks: [{ id: "uni001", title: "设计数据库 schema", priority: "high", tags: ["后端"], createdAt: "2026-01-01T00:00:00Z", doneAt: null }],
+      tasks: [{ id: "uni001", title: "Design database schema \u{1F5C3}", progress: "in_progress", createdAt: "2026-01-01T00:00:00Z", doneAt: null }],
       edges: [],
     };
 
     writeFileSync(testFile, JSON.stringify(data, null, 2));
     const loaded = JSON.parse(readFileSync(testFile, "utf-8"));
-    expect(loaded.tasks[0].title).toBe("设计数据库 schema");
-    expect(loaded.tasks[0].tags[0]).toBe("后端");
+    expect(loaded.tasks[0].title).toBe("Design database schema \u{1F5C3}");
   });
 
   it("writes to nested directory with mkdirSync", () => {

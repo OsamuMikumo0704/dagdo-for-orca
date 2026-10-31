@@ -34,8 +34,8 @@ describe("link command", () => {
   it("--before: adds edge from A to B", async () => {
     const data = makeGraph({
       tasks: [
-        { id: "aaa111", title: "A", priority: "med", tags: [], createdAt: "2026-01-01T00:00:00Z", doneAt: null },
-        { id: "bbb222", title: "B", priority: "med", tags: [], createdAt: "2026-01-01T00:00:00Z", doneAt: null },
+        { id: "aaa111", title: "A", progress: "ready", createdAt: "2026-01-01T00:00:00Z", doneAt: null },
+        { id: "bbb222", title: "B", progress: "ready", createdAt: "2026-01-01T00:00:00Z", doneAt: null },
       ],
     });
     const file = writeGraph(tmpDir, data);
@@ -50,8 +50,8 @@ describe("link command", () => {
   it("--after: adds edge from B to A", async () => {
     const data = makeGraph({
       tasks: [
-        { id: "aaa111", title: "A", priority: "med", tags: [], createdAt: "2026-01-01T00:00:00Z", doneAt: null },
-        { id: "bbb222", title: "B", priority: "med", tags: [], createdAt: "2026-01-01T00:00:00Z", doneAt: null },
+        { id: "aaa111", title: "A", progress: "ready", createdAt: "2026-01-01T00:00:00Z", doneAt: null },
+        { id: "bbb222", title: "B", progress: "ready", createdAt: "2026-01-01T00:00:00Z", doneAt: null },
       ],
     });
     const file = writeGraph(tmpDir, data);

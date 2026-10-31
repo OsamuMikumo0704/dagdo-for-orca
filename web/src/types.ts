@@ -1,15 +1,16 @@
 // Mirror of src/types.ts — kept in sync by hand. Stable schema, rarely changes.
 
-export type Priority = "low" | "med" | "high";
+export type TaskProgress = "backlog" | "ready" | "in_progress";
 
 export interface Task {
   id: string;
   title: string;
-  priority: Priority;
-  tags: string[];
+  progress: TaskProgress;
   createdAt: string;
   doneAt: string | null;
   notes?: string;
+  orcaWorkspace?: import("../../src/types").OrcaWorkspace;
+  orcaCreation?: import("../../src/types").OrcaCreation;
 }
 
 export interface Edge {
@@ -17,17 +18,10 @@ export interface Edge {
   to: string;
 }
 
-export interface Tab {
-  id: string;
-  name: string;
-  taskIds: string[];
-}
-
 export interface GraphData {
   version: 1;
   tasks: Task[];
   edges: Edge[];
-  tabs?: Tab[];
 }
 
-export type NodeState = "ready" | "blocked" | "done";
+export type NodeState = TaskProgress | "blocked" | "done";

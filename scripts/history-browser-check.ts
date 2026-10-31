@@ -1,0 +1,67 @@
+declare const document: { querySelector(selector: string): any };
+import { chromium } from "playwright";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { strict as assert } from "assert";
+import { startServer } from "../src/server/server";
+
+const directory = mkdtempSync(join(tmpdir(), "dagdo-history-browser-"));
+const previous = process.env.DAGDO_DATA_DIR; process.env.DAGDO_DATA_DIR = directory;
+const server = await startServer({ preferredPort: 0 });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.DAGDO_BROWSER_EXECUTABLE });
+try {
+  const context = await browser.newContext();
+  const a = await context.newPage(), b = await context.newPage();
+  await Promise.all([a.goto(server.url), b.goto(server.url)]);
+  await a.getByRole("button", { name: "Undo", exact: true }).waitFor();
+  assert(await a.getByRole("button", { name: "Undo", exact: true }).isDisabled());
+  a.once("dialog", d => d.accept("Shared history task"));
+  await a.getByRole("button", { name: "New task", exact: true }).click();
+  await b.getByRole("button", { name: "Shared history task", exact: true }).waitFor();
+  await b.getByRole("button", { name: "Undo", exact: true }).click();
+  await a.getByText("No tasks in this project.", { exact: true }).waitFor();
+  await a.keyboard.press("Control+y");
+  await b.getByRole("button", { name: "Shared history task", exact: true }).waitFor();
+  console.log("Shared task undo/redo passed.");
+  await a.reload();
+  await a.getByRole("button", { name: "Shared history task", exact: true }).waitFor();
+  assert(await a.getByRole("button", { name: "Undo", exact: true }).isEnabled());
+  const node = a.locator(".react-flow__node-task");
+  await node.waitFor();
+  await a.waitForTimeout(400);
+  const before = await node.evaluate(e => (e as any).style.transform);
+  const box = (await node.boundingBox())!;
+  await a.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await a.mouse.down(); await a.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2 + 60, { steps: 12 }); await a.mouse.up();
+  await a.waitForFunction(() => (document.querySelector(".react-flow__node-task") as any | null)?.style.transform !== null);
+  await a.waitForTimeout(200);
+  const moved = await node.evaluate(e => (e as any).style.transform); assert.notEqual(moved, before);
+  await b.waitForFunction(style => (document.querySelector(".react-flow__node-task") as any | null)?.style.transform === style, moved);
+  console.log("Drag synchronized.");
+  await a.keyboard.press("Control+z");
+  await a.waitForTimeout(300);
+
+  await a.waitForFunction(style => (document.querySelector(".react-flow__node-task") as any | null)?.style.transform === style, before);
+  await b.getByRole("button", { name: "Redo", exact: true }).click();
+  await a.waitForFunction(style => (document.querySelector(".react-flow__node-task") as any | null)?.style.transform === style, moved);
+  console.log("Drag undo/redo passed.");
+  await a.getByRole("button", { name: "Shared history task", exact: true }).dblclick();
+  const input = a.getByRole("textbox", { name: "Task title", exact: true });
+  await input.fill("Draft text"); await input.press("Control+z");
+  assert(await a.getByRole("dialog").isVisible());
+  await a.getByRole("button", { name: "Close", exact: true }).click();
+  await a.waitForFunction(() => !(document.querySelector('button[aria-label="Undo"]') as any)?.disabled);
+  await a.waitForTimeout(500);
+  await node.click();
+  await a.keyboard.press("Delete");
+  await a.waitForTimeout(300);
+  await b.getByText("No tasks in this project.", { exact: true }).waitFor();
+  await b.keyboard.press("Control+z");
+  await a.locator(".react-flow__node-task").waitFor();
+  console.log("History browser checks passed: two tabs, shared cursor and drag, reload, shortcuts, input isolation and deletion.");
+} finally {
+  await browser.close(); await server.stop();
+  if (previous === undefined) delete process.env.DAGDO_DATA_DIR; else process.env.DAGDO_DATA_DIR = previous;
+  rmSync(directory, { recursive: true, force: true });
+}

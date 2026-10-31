@@ -1,6 +1,8 @@
 import { generateId } from "../ids";
+import { computeTaskStates } from "../task-state";
 import { wouldCreateCycle, buildActiveGraph } from "./dag";
-import type { Edge, GraphData, Priority, Tab, Task } from "../types";
+import type { Edge, GraphData, TaskProgress, Task } from "../types";
+import type { Project, ProjectStore } from "../storage";
 
 /**
  * Pure data operations over `GraphData`. Each function returns a new
@@ -15,34 +17,18 @@ import type { Edge, GraphData, Priority, Tab, Task } from "../types";
 
 export interface AddTaskArgs {
   title: string;
-  priority?: Priority;
-  tags?: string[];
-  /**
-   * If set, the new task is also appended to this tab's `taskIds`. Caller is
-   * responsible for validating the tab exists — `addTask` assumes it does and
-   * silently no-ops the membership write if the id isn't found.
-   */
-  tabId?: string;
+  progress?: TaskProgress;
 }
 
 export function addTask(data: GraphData, args: AddTaskArgs): { data: GraphData; task: Task } {
   const task: Task = {
     id: generateId(),
     title: args.title,
-    priority: args.priority ?? "med",
-    tags: args.tags ?? [],
+    progress: args.progress ?? "ready",
     createdAt: new Date().toISOString(),
     doneAt: null,
   };
-  let next: GraphData = { ...data, tasks: [...data.tasks, task] };
-  if (args.tabId !== undefined && next.tabs) {
-    next = {
-      ...next,
-      tabs: next.tabs.map((t) =>
-        t.id === args.tabId ? { ...t, taskIds: [...t.taskIds, task.id] } : t,
-      ),
-    };
-  }
+  const next: GraphData = { ...data, tasks: [...data.tasks, task] };
   return { data: next, task };
 }
 
@@ -56,16 +42,17 @@ export const NOTES_MAX_CHARS = 2000;
 
 export interface TaskPatch {
   title?: string;
-  priority?: Priority;
-  tags?: string[];
+  progress?: TaskProgress;
   doneAt?: string | null;
   /** `null` clears the notes field; a string replaces it. */
   notes?: string | null;
+  clearDependencies?: boolean;
 }
 
 export type UpdateTaskResult =
   | { ok: true; data: GraphData; task: Task }
   | { ok: false; error: "task_not_found" }
+  | { ok: false; error: "task_blocked" | "task_backlog" | "backlog_dependencies" | "invalid_input" }
   | { ok: false; error: "note_too_long"; limit: number };
 
 export function updateTask(data: GraphData, id: string, patch: TaskPatch): UpdateTaskResult {
@@ -77,17 +64,24 @@ export function updateTask(data: GraphData, id: string, patch: TaskPatch): Updat
   }
 
   const existing = data.tasks[idx]!;
+  const progress = patch.progress ?? existing.progress;
+  const doneAt = patch.doneAt === undefined ? existing.doneAt : patch.doneAt;
+  if (progress === "backlog" && doneAt != null) return { ok: false, error: "task_backlog" };
+  if (patch.clearDependencies && patch.progress !== "backlog") return { ok: false, error: "invalid_input" };
+  if (patch.progress === "backlog" && data.edges.some(e => e.from === id || e.to === id) && !patch.clearDependencies) return { ok: false, error: "backlog_dependencies" };
+  if (patch.doneAt != null && computeTaskStates(data.tasks, data.edges).get(id) === "blocked") {
+    return { ok: false, error: "task_blocked" };
+  }
   const updated: Task = {
     ...existing,
     ...(patch.title !== undefined ? { title: patch.title } : {}),
-    ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
-    ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
+    ...(patch.progress !== undefined ? { progress: patch.progress } : {}),
     ...(patch.doneAt !== undefined ? { doneAt: patch.doneAt } : {}),
     ...applyNotesPatch(patch.notes),
   };
   const tasks = data.tasks.slice();
   tasks[idx] = updated;
-  return { ok: true, data: { ...data, tasks }, task: updated };
+  return { ok: true, data: { ...data, tasks, edges: patch.progress === "backlog" ? data.edges.filter(e => e.from !== id && e.to !== id) : data.edges }, task: updated };
 }
 
 // `null` (and empty string) means "drop the field entirely" so serialized
@@ -117,17 +111,12 @@ export function removeTask(data: GraphData, id: string): RemoveTaskResult {
     tasks: data.tasks.filter((t) => t.id !== id),
     edges: data.edges.filter((e) => e.from !== id && e.to !== id),
   };
-  if (cleaned.tabs) {
-    cleaned.tabs = cleaned.tabs.map((tab) => {
-      const filtered = tab.taskIds.filter((tid) => tid !== id);
-      return filtered.length === tab.taskIds.length ? tab : { ...tab, taskIds: filtered };
-    });
-  }
   return { ok: true, data: cleaned, removedTask: task };
 }
 
 export type AddEdgeResult =
   | { ok: true; data: GraphData }
+  | { ok: false; error: "task_backlog" }
   | { ok: false; error: "self_loop" }
   | { ok: false; error: "task_not_found"; id: string }
   | { ok: false; error: "already_exists" }
@@ -142,6 +131,7 @@ export function addEdge(data: GraphData, args: { from: string; to: string }): Ad
   const hasTo = data.tasks.some((t) => t.id === to);
   if (!hasTo) return { ok: false, error: "task_not_found", id: to };
 
+  if (data.tasks.some(t => (t.id === from || t.id === to) && t.progress === "backlog")) return { ok: false, error: "task_backlog" };
   if (data.edges.some((e) => e.from === from && e.to === to)) {
     return { ok: false, error: "already_exists" };
   }
@@ -174,97 +164,32 @@ export function findTask(data: GraphData, id: string): Task | null {
   return data.tasks.find((t) => t.id === id) ?? null;
 }
 
-// ─── tab mutations ────────────────────────────────────────────────────
+// ─── project mutations ────────────────────────────────────────────────
 
-function ensureTabs(data: GraphData): Tab[] {
-  return data.tabs ?? [];
+export type ProjectResult =
+  | { ok: true; store: ProjectStore; project: Project }
+  | { ok: false; error: "invalid_name" | "project_not_found" | "last_project" };
+
+export function addProject(store: ProjectStore, name: string): ProjectResult {
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: "invalid_name" };
+  const project: Project = { id: crypto.randomUUID(), name: trimmed, version: 1, tasks: [], edges: [] };
+  return { ok: true, store: { ...store, projects: [...store.projects, project] }, project };
 }
 
-export function createTab(
-  data: GraphData,
-  args: { name: string; taskIds?: string[] },
-): { data: GraphData; tab: Tab } {
-  const tab: Tab = {
-    id: generateId(),
-    name: args.name,
-    taskIds: args.taskIds ?? [],
-  };
-  return {
-    data: { ...data, tabs: [...ensureTabs(data), tab] },
-    tab,
-  };
+export function renameProject(store: ProjectStore, id: string, name: string): ProjectResult {
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: "invalid_name" };
+  const existing = store.projects.find((p) => p.id === id);
+  if (!existing) return { ok: false, error: "project_not_found" };
+  const project = { ...existing, name: trimmed };
+  return { ok: true, store: { ...store, projects: store.projects.map((p) => (p.id === id ? project : p)) }, project };
 }
 
-export type RenameTabResult =
-  | { ok: true; data: GraphData; tab: Tab }
-  | { ok: false; error: "tab_not_found" };
-
-export function renameTab(data: GraphData, id: string, name: string): RenameTabResult {
-  const tabs = ensureTabs(data);
-  const idx = tabs.findIndex((t) => t.id === id);
-  if (idx < 0) return { ok: false, error: "tab_not_found" };
-  const updated = { ...tabs[idx]!, name };
-  const next = tabs.slice();
-  next[idx] = updated;
-  return { ok: true, data: { ...data, tabs: next }, tab: updated };
-}
-
-export type DeleteTabResult =
-  | { ok: true; data: GraphData }
-  | { ok: false; error: "tab_not_found" };
-
-export function deleteTab(data: GraphData, id: string): DeleteTabResult {
-  const tabs = ensureTabs(data);
-  if (!tabs.some((t) => t.id === id)) return { ok: false, error: "tab_not_found" };
-  return { ok: true, data: { ...data, tabs: tabs.filter((t) => t.id !== id) } };
-}
-
-export type MoveToTabResult =
-  | { ok: true; data: GraphData; tab: Tab; removedEdges: Edge[] }
-  | { ok: false; error: "tab_not_found" };
-
-export function moveTasksToTab(
-  data: GraphData,
-  tabId: string,
-  taskIds: string[],
-): MoveToTabResult {
-  const tabs = ensureTabs(data);
-  const idx = tabs.findIndex((t) => t.id === tabId);
-  if (idx < 0) return { ok: false, error: "tab_not_found" };
-
-  const moving = new Set(taskIds);
-
-  // Remove these tasks from any other tab they might be in
-  let next = tabs.map((t, i) => {
-    if (i === idx) return t;
-    const filtered = t.taskIds.filter((id) => !moving.has(id));
-    return filtered.length === t.taskIds.length ? t : { ...t, taskIds: filtered };
-  });
-
-  // Add to the target tab (dedup)
-  const existing = new Set(next[idx]!.taskIds);
-  const merged = [...next[idx]!.taskIds, ...taskIds.filter((id) => !existing.has(id))];
-  next = next.slice();
-  next[idx] = { ...next[idx]!, taskIds: merged };
-
-  // Remove edges where exactly one endpoint is in the moving set
-  const removedEdges = data.edges.filter((e) => {
-    const fromMoving = moving.has(e.from);
-    const toMoving = moving.has(e.to);
-    return fromMoving !== toMoving;
-  });
-  const keptEdges = removedEdges.length > 0
-    ? data.edges.filter((e) => {
-        const fromMoving = moving.has(e.from);
-        const toMoving = moving.has(e.to);
-        return fromMoving === toMoving;
-      })
-    : data.edges;
-
-  return {
-    ok: true,
-    data: { ...data, tabs: next, edges: keptEdges },
-    tab: next[idx]!,
-    removedEdges,
-  };
+/** Deleting a project also removes its tasks and dependencies. */
+export function removeProject(store: ProjectStore, id: string): ProjectResult {
+  const project = store.projects.find((p) => p.id === id);
+  if (!project) return { ok: false, error: "project_not_found" };
+  if (store.projects.length === 1) return { ok: false, error: "last_project" };
+  return { ok: true, store: { ...store, projects: store.projects.filter((p) => p.id !== id) }, project };
 }

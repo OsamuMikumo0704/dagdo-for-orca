@@ -10,8 +10,7 @@ function makeData(taskIds: string[], edges: [string, string][], doneIds: string[
     tasks: taskIds.map((id) => ({
       id,
       title: `Task ${id}`,
-      priority: "med" as const,
-      tags: [],
+      progress: "ready" as const,
       createdAt: "2026-01-01T00:00:00Z",
       doneAt: doneSet.has(id) ? "2026-01-02T00:00:00Z" : null,
     })),
@@ -97,8 +96,8 @@ describe("effectiveInDegree (issue #9)", () => {
   it("renderMermaid styles B as ready when its blocker is done", () => {
     const data = makeData(["a", "b", "c"], [["a", "b"], ["b", "c"]], ["a"]);
     const mermaid = renderMermaid(buildFullGraph(data));
-    // Linear indigo CTA marks ready nodes
-    expect(mermaid).toContain("style b fill:#5e6ad2");
+    // Green marks Ready nodes
+    expect(mermaid).toContain("style b fill:#fbbf24");
     // blocked nodes use white surface
     expect(mermaid).toContain("style c fill:#ffffff");
     // done nodes use muted panel

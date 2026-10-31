@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-SOURCE="$0"
-while [ -L "$SOURCE" ]; do
-  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-exec node "$SCRIPT_DIR/../dist/cli.js" "$@"

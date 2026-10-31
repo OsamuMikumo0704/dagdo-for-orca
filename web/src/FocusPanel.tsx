@@ -1,33 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Check, GripVertical } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Plus } from "lucide-react";
+import { OrcaIcon } from "./OrcaIcon";
 import { Button } from "@/components/ui/button";
-import type { Priority, Task } from "./types";
+import { Input } from "@/components/ui/input";
+import { PROGRESS_VALUES, STATE_LABELS } from "../../src/task-state";
+import { STATE_STYLE } from "./task-style";
+import type { Task } from "./types";
 
-interface FocusPanelProps {
-  tasks: Task[];
-  onDone: (id: string) => void;
-  onFocus: (id: string) => void;
-  onPriorityChange: (id: string, priority: Priority) => void;
-}
-
-const MIN_WIDTH = 260;
+const MIN_WIDTH = 140;
 const MAX_WIDTH = 400;
 const STORAGE_KEY = "dagdo-focus-width";
 
@@ -38,7 +18,7 @@ function useResizableWidth() {
       const n = Number(stored);
       if (n >= MIN_WIDTH && n <= MAX_WIDTH) return n;
     }
-    return MIN_WIDTH;
+    return 260;
   });
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -69,172 +49,84 @@ function useResizableWidth() {
   return { width, onPointerDown, onPointerMove, onPointerUp, isDragging: dragging };
 }
 
-const PRIORITY_STYLE: Record<Priority, string> = {
-  high: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",
-  med: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400",
-  low: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-};
 
-function SortableItem({
-  task,
-  onDone,
-  onFocus,
-}: {
-  task: Task;
-  onDone: (id: string) => void;
+export const BACKLOG_DRAG_TYPE = "application/x-dagdo-backlog";
+
+export function FocusPanel({ backlog, projectId, disabled, onAddBacklog, tasks, onFocus, onOpenDetails, onWorkspace, onOpenWorkspace }: {
+  backlog: Task[];
+  projectId: string;
+  disabled: boolean;
+  onAddBacklog: (title: string) => Promise<void>;
+  tasks: Task[];
   onFocus: (id: string) => void;
+  onOpenDetails: (id: string) => void;
+  onWorkspace: (id: string) => void;
+  onOpenWorkspace: (id: string) => Promise<void>;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: task.id,
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "flex items-center gap-2 px-2 py-1.5 rounded-md group",
-        "hover:bg-accent/50 transition-colors",
-        isDragging && "opacity-50 z-50",
-      )}
-    >
-      <button
-        className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground shrink-0"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
-      <button
-        className="flex-1 text-left min-w-0 cursor-pointer"
-        onClick={() => onFocus(task.id)}
-      >
-        <span className="text-sm leading-snug line-clamp-2">{task.title}</span>
-      </button>
-      <span
-        className={cn(
-          "text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded shrink-0",
-          PRIORITY_STYLE[task.priority],
-        )}
-      >
-        {task.priority === "med" ? "med" : task.priority}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={() => onDone(task.id)}
-        aria-label={`Mark "${task.title}" as done`}
-      >
-        <Check className="h-3.5 w-3.5" />
-      </Button>
-    </div>
-  );
-}
-
-export function FocusPanel({ tasks, onDone, onFocus, onPriorityChange }: FocusPanelProps) {
   const { width, onPointerDown, onPointerMove, onPointerUp } = useResizableWidth();
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const sortedIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
-
-  function handleDragEnd(event: DragEndEvent): void {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const draggedId = active.id as string;
-    const overId = over.id as string;
-    const overTask = tasks.find((t) => t.id === overId);
-    if (!overTask) return;
-
-    const draggedTask = tasks.find((t) => t.id === draggedId);
-    if (!draggedTask || draggedTask.priority === overTask.priority) return;
-
-    onPriorityChange(draggedId, overTask.priority);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [addingBacklog, setAddingBacklog] = useState(false);
+  const [backlogTitle, setBacklogTitle] = useState("");
+  const [backlogSaving, setBacklogSaving] = useState(false);
+  const [backlogError, setBacklogError] = useState("");
+  const backlogSavingRef = useRef(false);
+  function cancelBacklog() {
+    if (backlogSavingRef.current) return;
+    setAddingBacklog(false); setBacklogTitle(""); setBacklogError("");
   }
-
-  const resizeHandle = (
-    <div
-      className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-    />
-  );
-
-  if (tasks.length === 0) {
-    return (
-      <div className="relative shrink-0 border-r border-border bg-background flex flex-col" style={{ width }}>
-        <div className="px-3 py-2 border-b border-border">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Focus
-          </h2>
-        </div>
-        <div className="flex-1 flex items-center justify-center p-4">
-          <p className="text-xs text-muted-foreground text-center leading-relaxed">
-            There's no actionable tasks now. Please check your graph.
-          </p>
-        </div>
-        {resizeHandle}
-      </div>
-    );
+  async function submitBacklog(event: React.FormEvent) {
+    event.preventDefault();
+    const title = backlogTitle.trim();
+    if (!title || disabled || backlogSavingRef.current) return;
+    backlogSavingRef.current = true; setBacklogSaving(true); setBacklogError("");
+    try {
+      await onAddBacklog(title);
+      setAddingBacklog(false); setBacklogTitle("");
+    } catch {
+      setBacklogError("Could not add the backlog task. Please try again.");
+    } finally { backlogSavingRef.current = false; setBacklogSaving(false); }
   }
-
-  const groups: { priority: Priority; items: Task[] }[] = [];
-  let currentPriority: Priority | null = null;
-  for (const task of tasks) {
-    if (task.priority !== currentPriority) {
-      currentPriority = task.priority;
-      groups.push({ priority: currentPriority, items: [] });
-    }
-    groups[groups.length - 1]!.items.push(task);
+  async function openWorkspace(id: string) {
+    setOpeningId(id);
+    try { await onOpenWorkspace(id); } finally { setOpeningId(null); }
   }
-
   return (
-    <div className="relative shrink-0 border-r border-border bg-background flex flex-col" style={{ width }}>
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Focus
-        </h2>
-        <span className="text-xs text-muted-foreground">{tasks.length}</span>
-      </div>
+    <aside aria-label="Actionable tasks" className="@container relative shrink-0 min-h-0 border-r border-border bg-background flex flex-col" style={{ width }}>
       <div className="flex-1 overflow-y-auto p-2">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
-            {groups.map((group) => (
-              <div key={group.priority} className="mb-2">
-                <div className="px-2 py-1">
-                  <span
-                    className={cn(
-                      "text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded",
-                      PRIORITY_STYLE[group.priority],
-                    )}
-                  >
-                    {group.priority}
-                  </span>
-                </div>
-                {group.items.map((task) => (
-                  <SortableItem
-                    key={task.id}
-                    task={task}
-                    onDone={onDone}
-                    onFocus={onFocus}
-                  />
-                ))}
+        {tasks.length === 0 && <p className="text-xs text-muted-foreground p-2">There's no actionable tasks now. Please check your graph.</p>}
+        {PROGRESS_VALUES.filter(p => p !== "backlog").map(progress => {
+          const items = tasks.filter(t => t.progress === progress);
+          if (!items.length) return null;
+          return <section key={progress} aria-label={STATE_LABELS[progress]} className="mb-3">
+            <h2 className="text-xs font-semibold px-2 py-1">{STATE_LABELS[progress]}</h2>
+            {items.map(task => <div key={task.id} className={"border rounded-md p-2 mb-2 cursor-pointer " + STATE_STYLE[progress]} onClick={() => onFocus(task.id)} onDoubleClick={() => onOpenDetails(task.id)}>
+              <div className="flex flex-col items-start gap-1 @[240px]:flex-row @[240px]:gap-2">
+                <button className="min-w-0 w-full flex-1 text-left text-sm leading-snug break-words cursor-pointer" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); onOpenDetails(task.id); } }}>{task.title}</button>
+                {task.orcaWorkspace && <button type="button" className="flex min-w-0 max-w-full @[240px]:max-w-[50%] items-center gap-1 rounded text-xs cursor-pointer hover:underline disabled:cursor-wait disabled:opacity-60" title={`Open in Orca: ${task.orcaWorkspace.path}`} aria-label={`Open ${task.orcaWorkspace.displayName} in Orca`} disabled={openingId === task.id} onClick={e => { e.stopPropagation(); void openWorkspace(task.id); }} onDoubleClick={e => e.stopPropagation()}><OrcaIcon /><span className="truncate">{task.orcaWorkspace.displayName}</span></button>}
+                {progress === "ready" && !task.orcaWorkspace && !task.orcaCreation && <Button variant="outline" size="sm" className="h-6 shrink-0 gap-1 px-1.5 [&_svg]:size-3" aria-label="Create workspace" title="Create workspace" onClick={e => { e.stopPropagation(); onWorkspace(task.id); }} onDoubleClick={e => e.stopPropagation()}><Plus aria-hidden="true" />Workspace</Button>}
               </div>
-            ))}
-          </SortableContext>
-        </DndContext>
+            </div>)}
+          </section>;
+        })}
+        <section aria-label="Backlog" className="mt-3 border-t border-border pt-2">
+          <div className="flex items-center justify-between px-2 py-1">
+            <h2 className="text-xs font-semibold">Backlog</h2>
+            <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Add backlog task" title="Add backlog task" disabled={disabled || addingBacklog} onClick={() => { setAddingBacklog(true); setBacklogError(""); }}><Plus className="h-3.5 w-3.5" /></Button>
+          </div>
+          {addingBacklog && <form aria-label="New backlog task" className="space-y-1.5 px-2 py-1" onSubmit={submitBacklog} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelBacklog(); } }}>
+            <Input autoFocus className="h-7 px-2 text-xs" aria-label="Backlog task title" placeholder="Task title" value={backlogTitle} disabled={backlogSaving} onChange={e => setBacklogTitle(e.target.value)} />
+            <div className="flex gap-1.5">
+              <Button type="submit" size="sm" className="h-6 px-1.5" disabled={disabled || backlogSaving || !backlogTitle.trim()}>{backlogSaving ? "Adding..." : "Add"}</Button>
+              <Button type="button" size="sm" variant="outline" className="h-6 px-1.5" disabled={backlogSaving} onClick={cancelBacklog}>Cancel</Button>
+            </div>
+            {backlogError && <p role="alert" className="text-xs text-destructive">{backlogError}</p>}
+          </form>}
+          {!backlog.length && <p className="px-2 py-1 text-xs text-muted-foreground">No backlog tasks.</p>}
+          {backlog.map(task => <button key={task.id} type="button" disabled={disabled} draggable={!disabled} onDragStart={e => { e.dataTransfer.setData(BACKLOG_DRAG_TYPE, JSON.stringify({ projectId, taskId: task.id })); e.dataTransfer.effectAllowed = "move"; }} onClick={() => onOpenDetails(task.id)} className="mb-2 block w-full min-w-0 rounded-md border border-zinc-300 bg-zinc-50 p-2 text-left text-sm leading-snug text-foreground break-words shadow-sm transition-colors cursor-grab hover:border-zinc-400 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500 dark:hover:bg-zinc-800 disabled:cursor-default disabled:opacity-50">{task.title}</button>)}
+          {backlog.length > 0 && <p className="px-2 py-1 text-xs text-muted-foreground">Drag a task onto the map to move it to Ready.</p>}
+        </section>
       </div>
-      {resizeHandle}
-    </div>
+      <div role="separator" aria-label="Resize task list" aria-orientation="vertical" aria-valuemin={140} aria-valuemax={400} aria-valuenow={width} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize touch-none hover:bg-primary/20 active:bg-primary/30" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
+    </aside>
   );
 }

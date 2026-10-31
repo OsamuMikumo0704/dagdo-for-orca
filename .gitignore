@@ -1,4 +1,5 @@
 # dependencies (bun install)
+.dagdo-dev/
 node_modules
 
 # output
@@ -6,14 +7,11 @@ out
 dist
 *.tgz
 
-# compiled binary
-/dagdo
-
 # generated images
 *.png
 *.svg
-!docs/hero.svg
-!docs/hero-dark.svg
+!docs/images/
+!docs/images/*.png
 
 # code coverage
 coverage
@@ -30,6 +28,26 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.test.local
 .env.production.local
 .env.local
+.env.*
+!.env.example
+
+# Private task data, backups, local runtime, credentials and agent sessions
+data/
+backups/
+local/
+.dagdo/
+.agents/
+.claude/
+.codex/
+.orca/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+*service-account*.json
+*.log
+Thumbs.db
 
 # caches
 .eslintcache

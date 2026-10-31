@@ -1,15 +1,39 @@
 export type TaskId = string;
 
-export type Priority = "low" | "med" | "high";
+export type TaskProgress = "backlog" | "ready" | "in_progress";
 
 export interface Task {
   id: TaskId;
   title: string;
-  priority: Priority;
-  tags: string[];
+  progress: TaskProgress;
   createdAt: string;
   doneAt: string | null;
   notes?: string;
+  orcaWorkspace?: OrcaWorkspace;
+  orcaCreation?: OrcaCreation;
+}
+
+export interface OrcaWorkspace {
+  identityKey: string;
+  id: string;
+  repoId: string;
+  projectId: string;
+  setupId: string;
+  path: string;
+  displayName: string;
+  branch: string;
+  createdAt: string;
+}
+export interface OrcaCreation {
+  requestId: string;
+  setupId: string;
+  repoId: string;
+  name: string;
+  baseBranch?: string;
+  branch?: string;
+  setup: "inherit" | "run" | "skip";
+  startedAt: string;
+  uncertain?: boolean;
 }
 
 export interface Edge {
@@ -17,17 +41,10 @@ export interface Edge {
   to: TaskId;
 }
 
-export interface Tab {
-  id: string;
-  name: string;
-  taskIds: TaskId[];
-}
-
 export interface GraphData {
   version: 1;
   tasks: Task[];
   edges: Edge[];
-  tabs?: Tab[];
 }
 
 export interface AdjacencyGraph {

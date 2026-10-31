@@ -1,0 +1,14 @@
+name: Feature request
+description: Suggest an improvement or translation.
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would this help you do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested behavior
+      description: Describe the browser and CLI workflows, or the language you can help translate.
