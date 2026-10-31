@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, openSync, closeSync, realpathSync } from "fs";
-import { join, resolve } from "path";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, openSync, closeSync, realpathSync, existsSync } from "fs";
+import { basename, join, resolve } from "path";
 import { tmpdir } from "os";
 import { resolveEnvironment } from "../src/environment";
 
@@ -67,7 +67,9 @@ it("linked worktrees isolate direct CLI data, seed once, and honor explicit over
       expect((await (await fetch(sb.url + "/api/projects/default/graph")).json() as any).tasks).toHaveLength(3);
       await script(a, "start", ["-NoOpen"]); expect(state(a).pid).toBe(sa.pid);
       const backup = await script(a, "backup");
-      expect(backup.startsWith(join(a, ".dagdo-dev/backups"))).toBe(true);
+      // PowerShell may expand an 8.3 path; require the exact generation to exist
+      // in this worktree's backup folder instead of comparing alias text.
+      expect(existsSync(join(a, ".dagdo-dev/backups", basename(backup), "metadata.json"))).toBe(true);
       await script(a, "dagdo", ["add", "restore me"]);
       await script(a, "stop");
       expect((await fetch(sb.url + "/api/projects/default/graph")).ok).toBe(true);

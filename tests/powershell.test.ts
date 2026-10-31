@@ -1,5 +1,5 @@
 import { expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
@@ -12,6 +12,11 @@ it.skipIf(process.platform !== "win32" || !process.env.DAGDO_TEST_PWSH)("PowerSh
   const title = 'Task "quoted" \\ \u65e5\u672c\u8a9e';
   const quote = (s: string) => "'" + s.replaceAll("'", "''") + "'";
   const data = join(directory, "task data"), backups = join(directory, "backups");
+  // .NET expands Windows 8.3 paths while Bun can preserve the alias. Verify
+  // physical identity with distinct files, rather than requiring identical text.
+  mkdirSync(data); mkdirSync(backups);
+  writeFileSync(join(data, ".path-probe"), "data directory");
+  writeFileSync(join(backups, ".path-probe"), "backup directory");
   writeFileSync(probe, `import { writeFileSync } from "fs";
 writeFileSync(process.argv[2]!, JSON.stringify({args: process.argv.slice(3), data: process.env.DAGDO_DATA_DIR, backups: process.env.DAGDO_BACKUP_DIR, mode: process.env.DAGDO_LOCAL_MODE, extra: process.env.DAGDO_TEST_VALUE}));
 process.exit(23);
@@ -32,7 +37,10 @@ exit $LASTEXITCODE
     });
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     expect(code, err).toBe(0);
-    expect(JSON.parse(readFileSync(result, "utf8"))).toEqual({ args: values, data, backups, mode: "probe", extra: "child only" });
+    const observed = JSON.parse(readFileSync(result, "utf8"));
+    expect({ args: observed.args, mode: observed.mode, extra: observed.extra }).toEqual({ args: values, mode: "probe", extra: "child only" });
+    expect(readFileSync(join(observed.data, ".path-probe"), "utf8")).toBe("data directory");
+    expect(readFileSync(join(observed.backups, ".path-probe"), "utf8")).toBe("backup directory");
     expect(JSON.parse(out).task.title).toBe(title);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
