@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   check:
+    name: Check (${{ matrix.os }}, ${{ matrix.shell }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,10 +32,13 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
-        shell: ${{ matrix.shell }}
-      - name: Test, typecheck and build the UI (Windows)
-        if: runner.os == 'Windows'
-        shell: ${{ matrix.shell }}
+      - name: Test, typecheck and build the UI (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./scripts/check.ps1
+      - name: Test, typecheck and build the UI (PowerShell 7)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
         run: ./scripts/check.ps1
       - name: Test, typecheck and build the UI (macOS / Linux)
         if: runner.os != 'Windows'
